@@ -1,5 +1,7 @@
 import requests
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, abort
+import random
+
 
 app = Flask(__name__)
 
@@ -18,18 +20,41 @@ def get_recipe_for(main_ingredient: str) -> dict:
     # 3. Use `requests` again to fetch the full recipe instructions
     #    - Here is another useful URL: www.themealdb.com/api/json/v1/1/lookup.php?i=52772
     # 4. Fill in the details of the returned object in the format below
+
+    params = {"i": main_ingredient}
+    response = requests.get("https://www.themealdb.com/api/json/v1/1/filter.php",params=params,timeout=10)
+    response.raise_for_status()
+
+    data = response.json()
+    meals = data["meals"]
+
+    random_recipe = random.choice(meals)
+    meal_id = random_recipe["idMeal"]
+    response = requests.get("https://www.themealdb.com/api/json/v1/1/lookup.php",params={"i": meal_id},timeout=10)
+    response.raise_for_status()
+
+    recipe = response.json()["meals"][0]
+
+    ingredients = {}
+
+    for i in range(1, 21):
+        ingredient = recipe[f"strIngredient{i}"]
+        measure = recipe[f"strMeasure{i}"]
+
+        if ingredient and ingredient.strip():
+            ingredients[ingredient.strip()] = (measure or "").strip()
+
     return dict(
-        name="",
-        image="",
-        video="",
-        instructions="",
-        ingredients=dict(
-            # ingredient: measure,
-        )
+        name=recipe["strMeal"],
+        image=recipe["strMealThumb"],
+        video=recipe["strYoutube"],
+        instructions=recipe["strInstructions"],
+        ingredients= ingredients
     )
 
 
 @app.route('/')
+
 def index():
     """
     Renders and returns the main page HTML.
@@ -39,10 +64,27 @@ def index():
 
 # YOUR CODE HERE:
 # Make this endpoint get called when for the following routes: "/recipe/<ingredient>"
+@app.route('/recipe/<ingredient>')
 def recipe(ingredient):
     """
-    Renders and returns an HTML page with a random recipe for a given main ingredient.
+        Renders and returns an HTML page with a random recipe for a given main ingredient.
     """
+
+    result = get_recipe_for(ingredient)
+
+    if result is None:
+        abort(404)
+
+    return render_template(
+        "recipe.html",
+        ingredient=ingredient,
+        recipe=result
+    )
+
+@app.route('/recipe/<ingredient>/json')
+def recipe_json(ingredient):
+    return jsonify(get_recipe_for(ingredient))
+
     # BONUS:
     # If there are no meals for a given ingredient, return a 404 NOT FOUND error response.
     # Hint: Read the documentation of flask. This is a bonus :P
